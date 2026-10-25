@@ -101,10 +101,10 @@ def test_default_settings_use_hard_cuts_only():
     assert all(entry.end_cut is CutStyle.HARD_CUT for entry in timeline.entries[:-1])
 
 
-def test_no_transition_folder_means_hard_cuts():
-    timeline = plan(USER_PROJECT, USER_SCENES, sfx_dir="")
-    assert timeline.transitions == []
-    assert all(entry.end_cut is CutStyle.HARD_CUT for entry in timeline.entries[:-1])
+def test_transitions_work_without_sound_folder():
+    timeline = plan(USER_PROJECT, USER_SCENES, sfx_dir="", library=[TransitionDef("Tears", "multi_tears", 0.9)])
+    assert len(timeline.transitions) == 4
+    assert all(event.sfx_path == "" for event in timeline.transitions)
 
 
 def test_random_transitions_never_repeat_back_to_back():

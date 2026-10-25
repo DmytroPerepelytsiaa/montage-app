@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..config import MOTION_CHOPPY, MOTION_SMOOTH, ProjectSettings
 from ..render.rife import ENGINE_AUTO, ENGINE_MINTERPOLATE, ENGINE_RIFE, find_rife
+from ..render.stylized_transitions import STYLE_LABELS
 from .theme import WARNING_LABEL_STYLE
 from .widgets import ComboBox, DoubleSpinBox, PathMode, PathSelector, SpinBox
 
@@ -107,6 +108,7 @@ class SettingsPanel(QWidget):
         self.tabs.addTab(self._scrollable(self._build_inputs_tab()), "Inputs")
         self.tabs.addTab(self._scrollable(self._build_audio_tab()), "Audio")
         self.tabs.addTab(self._scrollable(self._build_video_tab()), "Video")
+        self.tabs.addTab(self._scrollable(self._build_transitions_tab()), "Transitions")
         self.tabs.addTab(self._scrollable(self._build_export_tab()), "Export")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -216,6 +218,27 @@ class SettingsPanel(QWidget):
         combo.currentIndexChanged.connect(self._emit_changed)
         self._bind(section, name, combo.currentData, write)
         return combo
+
+    def _multi_check(self, section: str, name: str, options: Options) -> tuple[QWidget, dict[Any, QCheckBox]]:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        boxes: dict[Any, QCheckBox] = {}
+        for label, value in options:
+            box = QCheckBox(label)
+            box.toggled.connect(self._emit_changed)
+            layout.addWidget(box)
+            boxes[value] = box
+
+        def read() -> list[Any]:
+            return [value for value, box in boxes.items() if box.isChecked()]
+
+        def write(values: Any) -> None:
+            for value, box in boxes.items():
+                box.setChecked(value in values)
+
+        self._bind(section, name, read, write)
+        return container, boxes
 
     def _radios(self, section: str, name: str, options: Options) -> tuple[QWidget, dict[Any, QRadioButton]]:
         container = QWidget()
@@ -340,6 +363,24 @@ class SettingsPanel(QWidget):
         smooth = self.motion_buttons[MOTION_SMOOTH].isChecked()
         neighbor = self.scale_filter.currentData() == "neighbor"
         self.motion_warning_label.setHidden(not (smooth and neighbor))
+
+    def _build_transitions_tab(self) -> QWidget:
+        group, form = self._group("Transitions between voice-overs")
+        self.transitions_enabled = self._check(
+            "transitions", "enabled", "Add a transition where one voice-over ends and the next begins (02 → 03)",
+            "Off: every scene change is a hard cut. Scenes inside one voice-over always change with a hard cut.")
+        form.addRow(self.transitions_enabled)
+        styles, self.transition_style_boxes = self._multi_check("transitions", "styles", tuple(
+            (label, style) for style, label in STYLE_LABELS.items()))
+        form.addRow("Use", styles)
+        form.addRow("Duration", self._double("transitions", "duration_s", 0.2, 3.0, 0.05, 2, " s"))
+        form.addRow("Sound effects", self._path(
+            "paths", "sfx_dir", PathMode.DIRECTORY, placeholder="Optional: folder with transition sounds"))
+        note = QLabel("Transitions are picked at random and the same one never plays twice in a row. "
+                      "With a sound folder, a random sound plays at each transition (also never twice in a row).")
+        note.setWordWrap(True)
+        form.addRow(note)
+        return self._page(group)
 
     def _build_export_tab(self) -> QWidget:
         video, video_form = self._group("Video encoding")

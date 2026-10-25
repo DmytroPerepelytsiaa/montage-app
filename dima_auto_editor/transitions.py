@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .models import Issue, Severity, TransitionDef
+from .render.stylized_transitions import STYLE_LABELS, STYLIZED_TRANSITIONS
 
 SELECTION_RANDOM = "random"
 SELECTION_SEQUENTIAL = "sequential"
@@ -160,6 +161,11 @@ def default_library(sfx_files: list[str], duration_s: float | None = None) -> li
     return library
 
 
+def stylized_library(styles: Iterable[str], sfx_files: list[str], duration_s: float) -> list[TransitionDef]:
+    return [TransitionDef(name=STYLE_LABELS[style], xfade=style, duration_s=duration_s, sfx_files=list(sfx_files))
+            for style in styles if style in STYLE_LABELS]
+
+
 def save_library(path: str | Path, library: list[TransitionDef]) -> None:
     payload = {"version": LIBRARY_FORMAT_VERSION, "transitions": [transition.to_dict() for transition in library]}
     target = Path(path)
@@ -216,7 +222,7 @@ def validate_library(library: list[TransitionDef], sfx_dir_files: Iterable[str])
         elif transition.name.casefold() in seen_names:
             issues.append(Issue(Severity.WARNING, "duplicate_transition_name", f"Transition name '{label}' is used more than once."))
         seen_names.add(transition.name.casefold())
-        if transition.xfade not in XFADE_NAMES:
+        if transition.xfade not in XFADE_NAMES | STYLIZED_TRANSITIONS:
             issues.append(Issue(Severity.ERROR, "unknown_xfade", f"Transition '{label}' uses unknown FFmpeg xfade type '{transition.xfade}'."))
         issues.extend(_duration_issues(transition, label))
         for entry in transition.sfx_files:

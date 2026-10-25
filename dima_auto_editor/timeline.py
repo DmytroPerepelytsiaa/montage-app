@@ -153,7 +153,7 @@ class _TimelinePlanner:
         return TransitionPicker(self.library, mode, self.settings.transitions.seed)
 
     def _transitions_wanted(self) -> bool:
-        return self.settings.transitions.enabled and bool(self.settings.paths.sfx_dir.strip())
+        return self.settings.transitions.enabled
 
     def _transitions(self, entries: list[TimelineEntry]) -> list[TransitionEvent]:
         junctions = [position for position in range(len(entries) - 1)

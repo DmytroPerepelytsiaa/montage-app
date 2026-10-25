@@ -7,7 +7,10 @@ from pathlib import Path
 from ..config import ProjectSettings
 from ..ffmpeg_tools import LogCallback, ProgressCallback, run_ffmpeg
 from ..models import Issue, Severity, Timeline, TransitionEvent
+from .clips import output_size
 from .export import binaries_for, count_video_frames, encode_with_fallback, intermediate_video_args, preferred_encoder
+from .stylized_transitions import is_stylized
+from .transition_clips import render_transition_clip
 
 MAX_CLIPS_PER_CHUNK = 40
 
@@ -70,8 +73,10 @@ def plan_chunks(timeline: Timeline, max_clips: int = MAX_CLIPS_PER_CHUNK) -> lis
     return chunks
 
 
-def build_chunk_graph(timeline: Timeline, chunk: _Chunk, clip_frames: list[int]) -> tuple[str, int]:
+def build_chunk_graph(timeline: Timeline, chunk: _Chunk, clip_frames: list[int],
+                      transition_inputs: dict[int, int] | None = None) -> tuple[str, int]:
     fps = timeline.fps
+    transition_inputs = transition_inputs or {}
     statements: list[str] = []
     segment_labels: list[str] = []
     accumulated_label = ""
@@ -88,10 +93,19 @@ def build_chunk_graph(timeline: Timeline, chunk: _Chunk, clip_frames: list[int])
         else:
             overlap = transition_frames(incoming, fps)
             merged = f"x{local_index}"
-            statements.append(
-                f"[{accumulated_label}][{label}]xfade=transition={incoming.xfade}:duration={overlap / fps:.6f}"
-                f":offset={(accumulated_frames - overlap) / fps:.6f}[{merged}]"
-            )
+            rendered = transition_inputs.get(incoming.boundary_position)
+            if rendered is None:
+                statements.append(
+                    f"[{accumulated_label}][{label}]xfade=transition={incoming.xfade}:duration={overlap / fps:.6f}"
+                    f":offset={(accumulated_frames - overlap) / fps:.6f}[{merged}]"
+                )
+            else:
+                statements.extend([
+                    f"[{rendered}:v]settb=AVTB,setpts=PTS-STARTPTS,fps={fps},format=yuv420p,setsar=1[t{local_index}]",
+                    f"[{accumulated_label}]trim=end_frame={accumulated_frames - overlap},setpts=PTS-STARTPTS[h{local_index}]",
+                    f"[{label}]trim=start_frame={overlap},setpts=PTS-STARTPTS[r{local_index}]",
+                    f"[h{local_index}][t{local_index}][r{local_index}]concat=n=3:v=1:a=0[{merged}]",
+                ])
             accumulated_label = merged
             accumulated_frames += clip_frames[position] - overlap
         entry = timeline.entries[position]
@@ -127,14 +141,20 @@ def compose_video(
     encoder = preferred_encoder(settings)
     clip_frames = clip_frame_counts(timeline)
     expected_frames = to_frames(timeline.duration, fps)
+    rendered_transitions = _render_stylized_transitions(clip_paths, clip_frames, timeline, settings, out_path,
+                                                        preview=preview, cancel=cancel, log=log)
     chunks = plan_chunks(timeline, MAX_CLIPS_PER_CHUNK)
     chunk_paths = [out_path] if len(chunks) == 1 else [
         out_path.with_name(f"{out_path.stem}_chunk{number:03d}{out_path.suffix}") for number in range(len(chunks))
     ]
     done_frames = 0
     for chunk, chunk_path in zip(chunks, chunk_paths):
-        graph, chunk_frame_count = build_chunk_graph(timeline, chunk, clip_frames)
+        clip_count = chunk.last - chunk.first + 1
+        chunk_transitions = [position for position in range(chunk.first, chunk.last) if position in rendered_transitions]
+        transition_inputs = {position: clip_count + number for number, position in enumerate(chunk_transitions)}
+        graph, chunk_frame_count = build_chunk_graph(timeline, chunk, clip_frames, transition_inputs)
         inputs = [arg for path in clip_paths[chunk.first:chunk.last + 1] for arg in ("-i", str(path))]
+        inputs += [arg for position in chunk_transitions for arg in ("-i", str(rendered_transitions[position]))]
 
         def build_args(chosen: str) -> list[str]:
             return [*inputs, "-filter_complex", graph, "-map", "[out]", "-an", "-frames:v", str(chunk_frame_count),
@@ -153,6 +173,24 @@ def compose_video(
         report.issues.append(Issue(Severity.WARNING, "compose_frame_mismatch",
                                    f"Composed video has {frames} frames, expected {expected_frames}.", str(out_path)))
     return report
+
+
+def _render_stylized_transitions(clip_paths: list[str | Path], clip_frames: list[int], timeline: Timeline,
+                                 settings: ProjectSettings, out_path: Path, *, preview: bool,
+                                 cancel: threading.Event | None, log: LogCallback | None) -> dict[int, Path]:
+    rendered: dict[int, Path] = {}
+    size = output_size(settings, preview)
+    for event in timeline.transitions:
+        if not is_stylized(event.xfade):
+            continue
+        position = event.boundary_position
+        target = out_path.with_name(f"{out_path.stem}_transition{position:03d}.mp4")
+        render_transition_clip(
+            event, Path(clip_paths[position]), clip_frames[position], Path(clip_paths[position + 1]),
+            transition_frames(event, timeline.fps), size, target, settings, preview=preview, cancel=cancel, log=log,
+        )
+        rendered[position] = target
+    return rendered
 
 
 def _scaled_progress(progress: ProgressCallback | None, done: int, span: int, total: int) -> ProgressCallback | None:

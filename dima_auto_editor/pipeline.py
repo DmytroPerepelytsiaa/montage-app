@@ -23,7 +23,7 @@ from .render.clips import ClipReport, output_size, render_scene_clip
 from .render.compose import ComposeReport, clip_content_durations, clip_frame_counts, compose_video, transition_frames
 from .render.export import ExportReport, is_within, mux_final, safe_project_name, unique_output_path
 from .timeline import plan_timeline
-from .transitions import default_library, load_library, resolve_library_sfx, validate_library
+from .transitions import load_library, resolve_library_sfx, stylized_library, validate_library
 
 StageProgressCallback = Callable[[str, float], None]
 LogCallback = Callable[[str], None]
@@ -271,7 +271,8 @@ class BuildPipeline:
             issues.append(Issue(Severity.WARNING, "library_missing",
                                 f"Transition library {library_path} was not found; the default library is used.", library_path))
         if library is None:
-            library = default_library(scan.sfx, self.settings.transitions.default_duration_s)
+            transitions = self.settings.transitions
+            library = stylized_library(transitions.styles, scan.sfx, transitions.duration_s)
         issues.extend(validate_library(library, scan.sfx))
         errors = [issue for issue in issues if issue.severity is Severity.ERROR]
         if errors:

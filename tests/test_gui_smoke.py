@@ -140,7 +140,7 @@ def customized_settings() -> ProjectSettings:
     settings.transitions.library_path = "C:/project/library.json"
     settings.transitions.selection = "sequential"
     settings.transitions.seed = 77
-    settings.transitions.default_duration_s = 0.6
+    settings.transitions.duration_s = 0.6
     export = settings.export
     export.encoder = "libx264"
     export.quality = 20
@@ -172,7 +172,7 @@ def test_main_window_constructs_with_required_controls(window):
     assert window.preview_panel.voice_button.text() == "Preview voice-over"
     assert window.preview_panel.render_button.text() == "Preview render"
     tab_titles = [window.settings_panel.tabs.tabText(i) for i in range(window.settings_panel.tabs.count())]
-    assert tab_titles == ["Inputs", "Audio", "Video", "Export"]
+    assert tab_titles == ["Inputs", "Audio", "Video", "Transitions", "Export"]
 
 
 def test_settings_round_trip_through_widgets(qapp):

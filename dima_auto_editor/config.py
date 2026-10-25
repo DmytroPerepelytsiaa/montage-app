@@ -62,10 +62,11 @@ class VideoSettings:
 @dataclass
 class TransitionSettings:
     enabled: bool = False
+    styles: list[str] = field(default_factory=lambda: ["stretch_left", "stretch_slide", "multi_tears", "heated_tears"])
     library_path: str = ""
     selection: str = "random"
     seed: int = 12345
-    default_duration_s: float = 0.5
+    duration_s: float = 0.9
 
 
 @dataclass
