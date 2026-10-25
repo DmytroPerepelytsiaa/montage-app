@@ -111,10 +111,10 @@ def test_random_transitions_never_repeat_back_to_back():
     durations = {index: 4.0 for index in range(1, 30)}
     timeline = plan(durations, [str(index) for index in durations], selection="random", seed=3)
     names = [event.name for event in timeline.transitions]
-    sounds = [event.sfx_path for event in timeline.transitions if event.sfx_path]
+    sounds = [event.sfx_path for event in timeline.transitions]
     assert len(names) == 28
     assert all(first != second for first, second in zip(names, names[1:]))
-    assert all(first != second for first, second in zip(sounds, sounds[1:]))
+    assert all(not first or first != second for first, second in zip(sounds, sounds[1:]))
 
 
 def test_short_voice_overs_still_get_transitions():

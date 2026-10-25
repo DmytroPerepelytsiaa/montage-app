@@ -2,8 +2,9 @@
 
 Desktop app for Windows that automatically edits short vertical (1080×1920, 60 FPS) biography videos
 from numbered scenes (`01.mp4`, `02.png`, …) and numbered voice-overs (`01.wav`, `02.wav`, …):
-it removes long pauses from the narration, times every scene to its voice-over, adds transitions with
-sound effects at sensible moments, mixes optional background music and exports a ready-to-upload MP4.
+it removes long pauses from the narration, splits each voice-over's time equally between its scenes, generates
+in-between frames for slowed clips (RIFE optical flow), mixes optional background music and exports a ready-to-upload
+MP4. Scenes change with hard cuts.
 
 ---
 
@@ -18,7 +19,7 @@ sound effects at sensible moments, mixes optional background music and exports a
    ```
 4. Запускайте программу двойным щелчком по **`run.bat`**.
 5. В программе укажите папки: озвучка (`01.wav`, `02.wav`…), сцены (`01.mp4`, `02.png`, `03_1.mp4`, `03_2.png`…),
-   звуки переходов (SFX), при желании музыку и папку для результата.
+   при желании музыку и папку для результата. Сцены меняются прямой склейкой (переходы пока выключены).
 6. Нажмите **Scan inputs** → проверьте список проблем (Issues) → **Plan timeline** → **Build Video**.
 
 FFmpeg отдельно ставить не нужно — используется встроенный (imageio-ffmpeg). Установщик также скачивает **RIFE** —
@@ -67,7 +68,6 @@ binary is used.
 | --- | --- |
 | Voice-over folder | `01.wav`, `02.wav`, … (also `.mp3 .m4a .aac .flac .ogg .opus .wma`) |
 | Scenes folder | `01.mp4`, `02.png`, … (videos `.mp4 .mov .mkv .webm .avi .m4v .gif`, images `.png .jpg .jpeg .webp .bmp .tif .tiff`) |
-| Transition SFX folder | Any audio files: `whoosh_01.wav`, `impact.mp3`, … |
 | Background music (optional) | One audio file, or a folder (its first audio file is used) |
 | Output folder | Where the video, manifest and logs are written. Must not be a source folder. |
 
@@ -75,8 +75,7 @@ binary is used.
   number (`01 intro.wav`, `02_childhood.mp4`).
 - **Several scenes for one voice-over**: `03_1.mp4`, `03_2.mp4`, `03_3.png` (or `03-1`, `03a`/`03b`). All of them are
   shown, splitting the voice-over's time **equally**; each clip is slowed down or trimmed to fit its share.
-- **Transitions with sound effects play only between voice-overs** (`02 → 03`); scenes inside one voice-over change
-  with a hard cut.
+- **Every scene change is a hard cut.** Transitions with sound effects are turned off for now.
 - Voice-overs and scenes may live in the **same folder** (`2.mp3`, `2_1.mp4`, `2_2.mp4`, `3.mp3`, …).
 - **Single continuous narration**: exactly one voice file (`01.wav`) with many scenes — the scenes split it equally.
 - **Nothing is skipped silently**: unnumbered files, unsupported formats, duplicates, gaps, voice-overs without
@@ -95,7 +94,7 @@ Bottom — stage, progress bar with elapsed time and ETA, and the action buttons
 | Button | What it does |
 | --- | --- |
 | **Scan inputs** | Lists the files, pairs scenes with voice-overs and reports problems. Fast. |
-| **Plan timeline** | Processes the narration and plans scene times and transitions without rendering. |
+| **Plan timeline** | Processes the narration and plans scene times without rendering. |
 | **Preview voice-over** (Preview tab) | Processes the narration (pause removal) and plays it. |
 | **Preview render** (Preview tab) | Renders a fast low-resolution preview and plays it (or *Open in player*). |
 | **Build Video** | Renders the final video. |
@@ -123,9 +122,6 @@ All long operations run in a background thread — the window stays responsive.
   motion interpolation (adds in-between frames).
 - *Clip too long*: smart trim (chooses a calm cut point and avoids internal scene cuts), keep start, keep center.
 
-**Transitions** — library file, random (seeded) or sequential selection, seed, default duration and the
-*Transition & SFX library* editor.
-
 **Export** — encoder (*Auto* picks the first working one of NVENC, QSV, AMF, libx264), quality (CRF/CQ, lower =
 better), preset, AAC bitrate, preview scale/length, *Keep temporary files* (for debugging).
 
@@ -136,41 +132,18 @@ better), preset, AAC bitrate, preview scale/length, *Keep temporary files* (for 
   repeating frames.
 - **Choppy 60 FPS (keep original frames)** — clips at normal speed keep their own frames, repeated to reach 60 FPS.
 - **Smooth 60 FPS (generate frames for every clip)** — every clip below 60 FPS gets generated frames.
-- **Engine**: *Auto* uses **RIFE** (neural optical flow on the GPU, `toolsifeife-ncnn-vulkan.exe`, the engine
+- **Engine**: *Auto* uses **RIFE** (neural optical flow on the GPU, `tools
+ife
+ife-ncnn-vulkan.exe`, the engine
   behind Flowframes) when installed, otherwise FFmpeg `minterpolate` (CPU, roughly 8× slower and with more artifacts).
   If RIFE fails (for example no Vulkan driver), the clip is rendered with `minterpolate` and a warning is shown.
 - Frame generation can smear very low-resolution pixel art; the app warns for sources narrower than 720 px.
 
-### Transition & SFX library
+### Transitions (turned off for now)
 
-*Transitions → Edit transition & SFX library…* (or *Tools* menu) opens a table where each row is a transition:
-enabled, name, FFmpeg xfade type, duration, sound effects (multi-select from the SFX folder), SFX volume (dB) and
-SFX offset (s, relative to the transition start). Rows can be added, duplicated, removed and reordered; *Play*
-auditions the sounds. Problems (unknown type, missing sound file, bad duration) are listed live at the bottom.
-*Reset to defaults* builds a starter library that matches sounds by name (whoosh → slides/wipes, impact → flashes,
-glitch → pixelize). On OK the library is saved (by default to `~/.dima_auto_editor/transitions.json`).
-
-Library JSON format:
-
-```json
-{
-  "version": 1,
-  "transitions": [
-    {
-      "name": "Slide left",
-      "xfade": "slideleft",
-      "duration_s": 0.4,
-      "sfx_files": ["E:/sfx/whoosh_01.wav", "whoosh_02.wav"],
-      "sfx_volume_db": -10.0,
-      "sfx_offset_s": 0.0,
-      "enabled": true
-    }
-  ]
-}
-```
-
-`sfx_files` may contain absolute paths or plain file names (resolved inside the SFX folder). One sound is picked
-per transition (randomly with the seed, or in order).
+The transition engine (FFmpeg `xfade` effects with sound effects, random choice without back-to-back repeats, placed
+only between voice-overs) is kept in the code but disabled: `transitions.enabled` is `false` and the GUI has no
+transition controls, so every scene change is a hard cut.
 
 ---
 
@@ -196,7 +169,6 @@ Everything goes into the chosen output folder:
 | "FFmpeg not found" dialog | Re-run `install.ps1`, or `winget install Gyan.FFmpeg`, or set the path on the Export tab. |
 | Build blocked with errors | Open the *Issues* list: fix the named files (missing scene for a voice-over, duplicate numbers, unreadable media) and *Scan* again. |
 | Words cut off / pauses too long | Lower *Silence threshold* (e.g. −42 dB) or increase *Pad after speech*; increase *Target pause* for a calmer pace. |
-| SFX too loud / too quiet | Adjust the global *SFX volume* or per-transition *SFX volume* in the library editor. |
 | GPU encoder fails | Choose *Auto* or *CPU: libx264* on the Export tab. |
 | App closes without a message | Start it from a terminal with `.venv\Scripts\python -m dima_auto_editor` to see the error, and check `logs/` in the output folder. |
 
